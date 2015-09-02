@@ -46,17 +46,12 @@ byte state;    //State variable
 byte bytes2send = 1;
 byte row, col; //Matrix activation variables
 int n, f; //sensor index and frame variable
-byte FrameByte2[256]; //Vector of data to send
 byte FrameByte1[1024];
-//byte Vdac[dimension];  //Test voltage to set on DAC
 byte Gpga = 1;  //Output gain to set on PGA (1 = x2)
 bool eqFlag = false;
 bool debugFlag = false;
+bool areaFlag = false;
 byte framesSent = 0;
-// Constants definition 
-//const byte endFrameByte = 10; //ASCII enter byte for ending frames
-//const long linuxBaud = 250000;
-//const long usbBaud = 115200;
 
 // Equilibration data:
 //Matrix 32x32_1
@@ -81,13 +76,6 @@ void setup() {
   
   // initialize analog pins:
   analogReference(EXTERNAL);//
-  
-  // initialize data variables:
-  /*for (int k=0;k<dimension;k++){
-    Frame[k]=0;
-    Vdac[k]=255;
-    Gpga[k]=0;//default gain = 1
-  }*/
   
   // initialize state variables
   InitVariables();
@@ -115,58 +103,47 @@ void loop() {
     GetUSBCommand(); 
     if (eqFlag){
       Serial.println("Equilibrating...");
-      EquilibrateSensors(Gpga); 
+      //EquilibrateSensors(Gpga); 
       Serial1.println("#");//
        Serial1.println("#");// 
       Serial.println("equilibration done");
       eqFlag = false;
     }
   } else if (state>0){   // If in the active state activate the corresponding sensor element, read, store and transmits data... 
-    // set test voltage of corresponding sensor n (DAC setting)
-    byte Vdac = EEPROM.read(row*32 + col);//equilibrationThreshold;//24//64
-    if (Vdac == 255) Vdac = 24;
-    SetTestVoltage(Vdac);  
-    // set multiplexers
-    SetMultiplexers(row, col);   
-    // set reading gain for corresponding sensor n (PGA setting)
-    SetReadingGain(Gpga);//Gpga         
-    // read sensor (external or internal ADC)
-    int adcRead = GetAnalogRead();//analogRead(analogIn);//GetAnalogRead();
-    
-    // format analog reading for ASCII compatible comunication
-    FrameByte1[n] = FormatAnalogByte1(adcRead);
-    if (bytes2send==2){
-      FrameByte2[n] = FormatAnalogByte2(adcRead);//take the first four bits and add offset for ASCII compatibility;
-    }     
+    FrameByte1[n] = 40;
+    if (!areaFlag || (col >= equilibrationArea[0] && row >= equilibrationArea[1] && col < equilibrationArea[2] && row < equilibrationArea[3])){      
+      // set test voltage of corresponding sensor n (DAC setting)
+      byte Vdac = EEPROM.read(row*32 + col);//equilibrationThreshold;//24//64
+      if (Vdac == 255) Vdac = 24;
+      SetTestVoltage(Vdac);  
+      // set multiplexers
+      SetMultiplexers(row, col);   
+      // set reading gain for corresponding sensor n (PGA setting)
+      SetReadingGain(Gpga);//Gpga         
+      // read sensor (external or internal ADC)
+      int adcRead = GetAnalogRead();//analogRead(analogIn);//GetAnalogRead();
+      
+      // format analog reading for ASCII compatible comunication
+      FrameByte1[n] = FormatAnalogByte1(adcRead);
+    }   
     // Once all sensor elements have been read transmits data to node
-    if (n==dimension-1){
-      //FrameByte1[n]=f;//frame indicator erase when done  
-      //FrameByte2[n]=0;//frame indicator erase when done    
+    if (n==dimension-1){   
       //log frame read time
       int tim = timer(true);      
       Serial.print(" f read:");
       Serial.println(tim);
       if (!debugFlag){
-        if (tim<100){
-          delay(100-tim);
+        if (tim<10){
+          delay(10-tim);
         } 
       } else{
         delay(1000);
-      }
-      //Serial.print("Dato[0,0]: ");
-      //Serial.println((1023-adcRead)>>2);
-      //Serial.println(FrameByte1[0]);
-      //Serial.println(FrameByte2[0]);    
+      }   
       // check for frame received confirmation
       //CheckLastDataSending();      
-      if (state>0 && framesSent<50){        
-        //Serial.print(" f ready:");
-        //Serial.print(timer(true));
+      if (state>0 && framesSent<50){   
         for (int j=0;j<=n;j++){
           Serial1.write(FrameByte1[j]);
-          if (bytes2send==2) { 
-            Serial1.write(FrameByte2[j]);
-          }
         }            
         int tframe=timer(true);
         Serial.print(" f sent:");
@@ -177,21 +154,13 @@ void loop() {
         framesSent++;    
         //state=3;// waiting confirmation state
         timer(false);//restart timer 
-        f++;
-        Serial.print(" frames:");
-        Serial.println(f); 
       } else{
         Serial1.println("'");//remind that acquisition is goind and ask for an acknowledge
       }
               
       n=0;//starts form sensor 0 
       col=0;
-      row=0;  
-     // frame indicator (erase when done)
-      /*  f++;
-        if (f>=255){
-          f=40;
-        }  */ 
+      row=0; 
       // check incoming data or commands from Node
       GetLinuxCommand();
       GetUSBCommand();
@@ -213,8 +182,6 @@ void loop() {
     }
   } 
 }
-/*int FrameFn(int dim, byte bytes){
-  static int*/
 
 /***************************************************************************** 
   Function:  timer
@@ -333,6 +300,12 @@ void GetLinuxCommand(){
             }
           }
           break;
+        case '7': //Area setting command
+          if (state==0){
+            areaFlag=true;
+            Serial.println("New acquisition area...");  
+          }        
+          break; 
         case '$': //Linux ready command
           if (state==0) {
             Serial1.println(" ");
@@ -575,7 +548,7 @@ int GetAnalogRead(){
 ******************************************************************************/   
 byte FormatAnalogByte1(int adcRead){
   int data = (1023-adcRead) >> 2;
-  data = data + 40;
+  data = data + 40 + 1;
   if (data==127)data=126;
   if (data>255){
     data=255;
@@ -588,7 +561,7 @@ byte FormatAnalogByte1(int adcRead){
 /***************************************************************************** 
   Function:  FormatAnalogByte2
 ******************************************************************************/   
-byte FormatAnalogByte2(int adcRead){
+/*byte FormatAnalogByte2(int adcRead){
   adcRead = (1023-adcRead);
   adcRead = adcRead  & 0b0000000000000011;
   byte data = byte(adcRead) + 40; // make measure differential (2.5V=0) and 8 bits maximum (0V=255)  
@@ -598,7 +571,7 @@ byte FormatAnalogByte2(int adcRead){
     data=40;
   }
   return data;
-} 
+} */
 
 /***************************************************************************** 
   Function:  InitVariables
