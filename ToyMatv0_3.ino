@@ -152,6 +152,9 @@ void loop() {
         Serial1.write(endFrameByte);//Sent end signal 
         framesSent++;    
         timer(false);//restart timer 
+        f++;
+        Serial.print("frames: ");
+        Serial.println(f);
       } else{
         Serial1.println("'");//remind that acquisition is goind and ask for an acknowledge
       }              
@@ -211,14 +214,14 @@ void GetLinuxCommand(){
       Serial.println("State 0"); 
     } else if (nodeoutput == '%'){
       Serial.print(" frame ok: ");
-           
-      if (framesSent==1){
+      framesSent = 0;     
+      /*if (framesSent==1){
         framesSent--;
       }else if (framesSent>=2){
         framesSent = framesSent-2; 
       }else{
-        framesSent =0;
-      } 
+        framesSent = 0;
+      } */
       Serial.print(framesSent);
       Serial.print(" remaining. ");
       if (state==3){
@@ -425,6 +428,8 @@ void GetLinuxCommand(){
           } else Serial.println("error reading Yn value"); 
           break;
       }
+      columns = acquisitionArea[2] - acquisitionArea[0];
+      rows = acquisitionArea[3] - acquisitionArea[1];
       dimension = rows*columns;
       if (dimension>256){
         bytes2send=1;
