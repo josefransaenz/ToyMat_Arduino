@@ -39,7 +39,7 @@ byte rows = 32;
 byte columns = 32;
 int dimension = 1024;
 byte equilibrationThreshold = 247; //if a pressure of 247kPa is applied (i.e. 200kg over 81cm2) is convenient to set the digital output in the same scale
-byte equilibrationArea[4];
+byte acquisitionArea[4] = {0, 0, 32, 32};
 
 // Global varaibles definition 
 byte state;    //State variable
@@ -110,24 +110,23 @@ void loop() {
       eqFlag = false;
     }
   } else if (state>0){   // If in the active state activate the corresponding sensor element, read, store and transmits data... 
-    FrameByte1[n] = 40;
-    if (!areaFlag || (col >= equilibrationArea[0] && row >= equilibrationArea[1] && col < equilibrationArea[2] && row < equilibrationArea[3])){      
-      // set test voltage of corresponding sensor n (DAC setting)
-      byte Vdac = EEPROM.read(row*32 + col);//equilibrationThreshold;//24//64
-      if (Vdac == 255) Vdac = 24;
-      SetTestVoltage(Vdac);  
-      // set multiplexers
-      SetMultiplexers(row, col);   
-      // set reading gain for corresponding sensor n (PGA setting)
-      SetReadingGain(Gpga);//Gpga         
-      // read sensor (external or internal ADC)
-      int adcRead = GetAnalogRead();//analogRead(analogIn);//GetAnalogRead();
-      
-      // format analog reading for ASCII compatible comunication
-      FrameByte1[n] = FormatAnalogByte1(adcRead);
-    }   
+         
+    // set test voltage of corresponding sensor n (DAC setting)
+    byte Vdac = EEPROM.read(row*32 + col);//equilibrationThreshold;//24//64
+    if (Vdac == 255) Vdac = 24;
+    SetTestVoltage(Vdac);  
+    // set multiplexers
+    SetMultiplexers(row, col);   
+    // set reading gain for corresponding sensor n (PGA setting)
+    SetReadingGain(Gpga);//Gpga         
+    // read sensor (external or internal ADC)
+    int adcRead = GetAnalogRead();//analogRead(analogIn);//GetAnalogRead();
+    
+    // format analog reading for ASCII compatible comunication
+    FrameByte1[n] = FormatAnalogByte1(adcRead);
+       
     // Once all sensor elements have been read transmits data to node
-    if (n==dimension-1){   
+    if (n == dimension-1){   
       //log frame read time
       int tim = timer(true);      
       Serial.print(" f read:");
@@ -141,26 +140,25 @@ void loop() {
       }   
       // check for frame received confirmation
       //CheckLastDataSending();      
-      if (state>0 && framesSent<50){   
-        for (int j=0;j<=n;j++){
+      if (state > 0 && framesSent<50){   
+        for (int j = 0; j <= n; j++){
           Serial1.write(FrameByte1[j]);
         }            
         int tframe=timer(true);
         Serial.print(" f sent:");
-        if(tframe==127)tframe=128;
+        if (tframe == 127) tframe = 128;
         Serial.println(tframe);           
         Serial1.write(tframe);//Sent frame time   
         Serial1.write(endFrameByte);//Sent end signal 
         framesSent++;    
-        //state=3;// waiting confirmation state
         timer(false);//restart timer 
       } else{
         Serial1.println("'");//remind that acquisition is goind and ask for an acknowledge
-      }
-              
+      }              
       n=0;//starts form sensor 0 
-      col=0;
-      row=0; 
+      col = acquisitionArea[0];
+      row = acquisitionArea[1]; 
+      
       // check incoming data or commands from Node
       GetLinuxCommand();
       GetUSBCommand();
@@ -172,11 +170,11 @@ void loop() {
     } else {
       n++;    
       col++;
-      if (col>=columns) {
-        col=0;
+      if (col >= acquisitionArea[2]) {
+        col = acquisitionArea[0];
         row++;
-        if (row>=rows) {
-          row=0;
+        if (row >= acquisitionArea[3]) {
+          row = acquisitionArea[1];
         }
       }
     }
@@ -303,7 +301,10 @@ void GetLinuxCommand(){
         case '7': //Area setting command
           if (state==0){
             areaFlag=true;
-            Serial.println("New acquisition area...");  
+            Serial.println("New acquisition area..."); 
+            columns = acquisitionArea[2] - acquisitionArea[0];
+            rows = acquisitionArea[3] - acquisitionArea[1];
+            dimension = rows*columns;
           }        
           break; 
         case '$': //Linux ready command
@@ -379,48 +380,48 @@ void GetLinuxCommand(){
           bytes = Serial1.readBytes(digits, 2);
           if (bytes == 2){
             if (digits[1]<48){
-              equilibrationArea[0] = byte(chars2Int(digits[0],'0','0'));
+              acquisitionArea[0] = byte(chars2Int(digits[0],'0','0'));
             } else{
-              equilibrationArea[0] = byte(chars2Int(digits[1],digits[0],'0'));
+              acquisitionArea[0] = byte(chars2Int(digits[1],digits[0],'0'));
             }
             Serial.print("X0: ");
-            Serial.println(equilibrationArea[0]);
+            Serial.println(acquisitionArea[0]);
           } else Serial.println("error reading X0 value"); 
           break;
         case 'y': //double byte data
           bytes = Serial1.readBytes(digits, 2);
           if (bytes == 2){
             if (digits[1]<48){
-              equilibrationArea[1] = byte(chars2Int(digits[0],'0','0'));
+              acquisitionArea[1] = byte(chars2Int(digits[0],'0','0'));
             } else{
-              equilibrationArea[1] = byte(chars2Int(digits[1],digits[0],'0'));
+              acquisitionArea[1] = byte(chars2Int(digits[1],digits[0],'0'));
             }
             Serial.print("Y0: ");
-            Serial.println(equilibrationArea[1]);
+            Serial.println(acquisitionArea[1]);
           } else Serial.println("error reading Y0 value"); 
           break;
         case 'X': //double byte data
           bytes = Serial1.readBytes(digits, 2);
           if (bytes == 2){
             if (digits[1]<48){
-              equilibrationArea[2] = byte(chars2Int(digits[0],'0','0'));
+              acquisitionArea[2] = byte(chars2Int(digits[0],'0','0'));
             } else{
-              equilibrationArea[2] = byte(chars2Int(digits[1],digits[0],'0'));
+              acquisitionArea[2] = byte(chars2Int(digits[1],digits[0],'0'));
             }
             Serial.print("Xn: ");
-            Serial.println(equilibrationArea[2]);
+            Serial.println(acquisitionArea[2]);
           } else Serial.println("error reading Xn value"); 
           break;
         case 'Y': //double byte data
           bytes = Serial1.readBytes(digits, 2);
           if (bytes == 2){
             if (digits[1]<48){
-              equilibrationArea[3] = byte(chars2Int(digits[0],'0','0'));
+              acquisitionArea[3] = byte(chars2Int(digits[0],'0','0'));
             } else{
-              equilibrationArea[3] = byte(chars2Int(digits[1],digits[0],'0'));
+              acquisitionArea[3] = byte(chars2Int(digits[1],digits[0],'0'));
             }
             Serial.print("Yn: ");
-            Serial.println(equilibrationArea[3]);
+            Serial.println(acquisitionArea[3]);
           } else Serial.println("error reading Yn value"); 
           break;
       }
@@ -577,8 +578,8 @@ byte FormatAnalogByte1(int adcRead){
   Function:  InitVariables
 ******************************************************************************/   
 void InitVariables(){
-  row=0;
-  col=0;
+  row = acquisitionArea[1];
+  col = acquisitionArea[0];
   n=0;
   f=0;
   state=0;//intial state
@@ -621,8 +622,8 @@ void EquilibrateSensors(byte gain){
   byte okpoints=0;
   byte maxVdacSensors=0;
   SetReadingGain(gain);//one gain for all
-  for (int i=equilibrationArea[1];i<equilibrationArea[3];i++){
-    for (int j=equilibrationArea[0];j<equilibrationArea[2];j++){
+  for (int i = acquisitionArea[1]; i < acquisitionArea[3]; i++){
+    for (int j = acquisitionArea[0]; j < acquisitionArea[2]; j++){
       isensor = i*32 + j;
       bool equilibratedFlag = false;
       GetUSBCommand();
